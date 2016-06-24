@@ -189,7 +189,7 @@ import UIKit
      - Parameter scrollView: A scrollView subclass informing the delegate.
      - Parameter button: the button tapped by the user
      */
-    optional func emptyDataSet(scrollView: UIScrollView, didTapButton: UIButton)
+    optional func emptyDataSet(scrollView: UIScrollView, didTapButton: UIButton?)
     
     /**
      Tells the delegate that the empty data set will appear.
@@ -282,7 +282,7 @@ extension UIScrollView {
         }
     }
     
-    private var emptyDataSetView: DZNEmptyDataSetView? {
+    weak private var emptyDataSetView: DZNEmptyDataSetView? {
         get {
             var view = objc_getAssociatedObject(self, &AssociatedKeys.view) as? DZNEmptyDataSetView
             
@@ -351,11 +351,12 @@ extension UIScrollView {
         }
         
         // Configure button
-        if let attributedText = self.attributedButtonTitle(.Normal), let button = view.button {
+        if let attributedText = self.attributedButtonTitle(.Normal), let button = view.button, buttonBackgroundImage = self.buttonBackgroundColor(.Normal) {
             button.setAttributedTitle(attributedText, forState: .Normal)
+            button.setBackgroundImage(buttonBackgroundImage, forState: .Normal)
             view.contentView.addSubview(button)
             
-            button.addTarget(self, action: #selector(didTapView(_:)), forControlEvents: .TouchUpInside)
+            button.addTarget(self, action: #selector(didTapButton(_:)), forControlEvents: .TouchUpInside)
             
             counter += 1
         }
@@ -369,7 +370,7 @@ extension UIScrollView {
         view.clipsToBounds = true
         view.fadeInOnDisplay = self.shouldFadeIn
         view.verticalOffset = self.verticalOffset
-
+        
         // Adds subview
         self.addSubview(view)
         
@@ -405,6 +406,10 @@ extension UIScrollView {
     
     private func attributedButtonTitle(state: UIControlState) -> NSAttributedString? {
         return emptyDataSetSource?.buttonTitleForEmptyDataSet?(self, state: state)
+    }
+    
+    private func buttonBackgroundColor(state: UIControlState) -> UIImage? {
+        return emptyDataSetSource?.buttonBackgroundImageForEmptyDataSet?(self, state: state)
     }
     
     private var verticalOffset: CGFloat {
@@ -449,6 +454,10 @@ extension UIScrollView {
         }
     }
     
+    func didTapButton(sender: UIButton?) {
+        emptyDataSetDelegate?.emptyDataSet?(self, didTapButton: sender)
+    }
+    
     func willAppear() {
         emptyDataSetDelegate?.emptyDataSetWillAppear?(self)
     }
@@ -475,8 +484,8 @@ extension UIScrollView {
         emptyDataSetView?.hidden = true
         
         // Cleans up the empty data set view
-//        self.emptyDataSetView?.removeFromSuperview()
-//        self.emptyDataSetView = nil
+        self.emptyDataSetView?.removeFromSuperview()
+        self.emptyDataSetView = nil
         
         self.scrollEnabled = true
         
@@ -520,11 +529,11 @@ extension UIScrollView {
 
 // MARK: -
 extension UITableView: EmptyDataSet {
-
+    
     func doSwizzle() -> Bool {
         
         var didSwizzle = false
-
+        
         let newReloadDataSelector = #selector(reloadDataEmptyDataSet)
         let originalReloadDataSelector = #selector(UITableView.reloadData)
         didSwizzle = swizzle(originalReloadDataSelector, swizzledSelector: newReloadDataSelector)
@@ -547,7 +556,7 @@ extension UITableView: EmptyDataSet {
         }
         return items == 0
     }
-
+    
     public func reloadDataEmptyDataSet()
     {
         print("\(self.dynamicType).\(#function)")
@@ -570,11 +579,11 @@ extension UITableView: EmptyDataSet {
 }
 
 extension UICollectionView: EmptyDataSet {
-
+    
     func doSwizzle() -> Bool {
-
+        
         var didSwizzle = false
-
+        
         let newReloadDataSelector = #selector(reloadDataEmptyDataSet)
         let originalReloadDataSelector = #selector(UICollectionView.reloadData)
         didSwizzle = swizzle(originalReloadDataSelector, swizzledSelector: newReloadDataSelector)
@@ -675,6 +684,7 @@ private class DZNEmptyDataSetView: UIView, UIGestureRecognizerDelegate {
         button.contentHorizontalAlignment = .Center
         button.contentVerticalAlignment = .Center
         button.accessibilityLabel = "empty set button"
+        button.contentEdgeInsets = UIEdgeInsetsMake(8, 8, 8, 8)
         return button
     }()
     
@@ -757,15 +767,15 @@ private class DZNEmptyDataSetView: UIView, UIGestureRecognizerDelegate {
         let padding = Double(width/16.0)
         let space = self.verticalSpace > 0 ? self.verticalSpace : 11 // Default is 11 pts
         let metrics:[String: Double] = ["padding": padding]
-
+        
         var views:[String: UIView] = [:]
         var names:[String] = []
-
+        
         self.addEquallyRelatedConstraint(contentView, attribute: .CenterX)
         let centerY = self.addEquallyRelatedConstraint(contentView, attribute: .CenterY)
         
         self.addConstraintsWithVisualFormat("|[contentView]|", metrics: nil, views: ["contentView": contentView])
-
+        
         // When a custom offset is available, we adjust the vertical constraints' constants
         if let offset = self.verticalOffset where offset != 0 {
             centerY.constant = offset
@@ -775,7 +785,7 @@ private class DZNEmptyDataSetView: UIView, UIGestureRecognizerDelegate {
         if self.canShowImage, let imageView = self.imageView {
             
             let name = "imageView"
-
+            
             names.append(name)
             views.updateValue(imageView, forKey: name)
             
@@ -786,7 +796,7 @@ private class DZNEmptyDataSetView: UIView, UIGestureRecognizerDelegate {
         if self.canShowTitle, let label = self.titleLabel {
             
             let name = "titleLabel"
-
+            
             names.append(name)
             views.updateValue(label, forKey: name)
             
@@ -816,7 +826,7 @@ private class DZNEmptyDataSetView: UIView, UIGestureRecognizerDelegate {
         }
         
         var verticalFormat = ""
-
+        
         for i in 0..<names.count {
             let name = names[i]
             
@@ -833,23 +843,23 @@ private class DZNEmptyDataSetView: UIView, UIGestureRecognizerDelegate {
         }
     }
     
-//    func prepareForReuse() {
-//        
-//        guard contentView.subviews.count > 0 else { return }
-//        
-//        titleLabel?.text = nil
-//        titleLabel?.frame = CGRectZero
-//        
-//        detailLabel?.text = nil
-//        detailLabel?.frame = CGRectZero
-//
-//        // Removes all subviews
-//        contentView.subviews.forEach({$0.removeFromSuperview()})
-//        
-//        // Removes all layout constraints
-//        contentView.removeConstraints(contentView.constraints)
-//        self.removeConstraints(self.constraints)
-//    }
+    //    func prepareForReuse() {
+    //
+    //        guard contentView.subviews.count > 0 else { return }
+    //
+    //        titleLabel?.text = nil
+    //        titleLabel?.frame = CGRectZero
+    //
+    //        detailLabel?.text = nil
+    //        detailLabel?.frame = CGRectZero
+    //
+    //        // Removes all subviews
+    //        contentView.subviews.forEach({$0.removeFromSuperview()})
+    //
+    //        // Removes all layout constraints
+    //        contentView.removeConstraints(contentView.constraints)
+    //        self.removeConstraints(self.constraints)
+    //    }
 }
 
 // MARK: - UIView extension
